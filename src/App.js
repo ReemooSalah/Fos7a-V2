@@ -736,16 +736,48 @@ export default function App() {
 
   // Check session on load
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // Handle magic link token in URL hash
+    const hashParams = new URLSearchParams(window.location.hash.replace("#", "?"));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+
+    async function init() {
+      if (accessToken && refreshToken) {
+        // Set session from magic link
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        // Clean URL
+        window.history.replaceState(null, "", window.location.pathname);
+        if (data?.user && !error) {
+          setUser(data.user);
+          await loadProfile(data.user);
+          setLoading(false);
+          return;
+        }
+      }
+      // Normal session check
+      const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
         await loadProfile(session.user);
+      } else {
+        setScreen("auth");
       }
       setLoading(false);
-    });
+    }
+
+    init();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) { setUser(session.user); await loadProfile(session.user); }
-      else { setUser(null); setProfile(null); setChildren([]); setScreen("auth"); }
+      if (event === "SIGNED_IN" && session?.user) {
+        setUser(session.user);
+        await loadProfile(session.user);
+        setLoading(false);
+      } else if (event === "SIGNED_OUT") {
+        setUser(null); setProfile(null); setChildren([]); setScreen("auth");
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
