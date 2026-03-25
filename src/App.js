@@ -134,9 +134,68 @@ function TabBar({active,onTab}){
 
 // ─── Auth Screen ──────────────────────────────────────────────────
 function AuthScreen({onAuth}){
-  const [mode,setMode]=useState("login");const [email,setEmail]=useState("");const [otp,setOtp]=useState("");const [loading,setLoading]=useState(false);const [error,setError]=useState("");const [msg,setMsg]=useState("");
-  async function sendOTP(){const clean=sanitize(email).toLowerCase();if(!validateEmail(clean)){setError("يرجى إدخال بريد إلكتروني صحيح ✉️");return;}setLoading(true);setError("");const{error:err}=await supabase.auth.signInWithOtp({email:clean,options:{shouldCreateUser:true}});setLoading(false);if(err){setError("تعذر إرسال الرمز.");return;}setMsg(clean);setMode("otp");gaEvent("send_otp");}
-  async function verifyOTP(){if(otp.length<6){setError("الرمز 6 أرقام");return;}setLoading(true);setError("");const{data,error:err}=await supabase.auth.verifyOtp({email:sanitize(email).toLowerCase(),token:otp,type:"email"});setLoading(false);if(err){setError("رمز غير صحيح ❌");return;}gaEvent("login_success");onAuth(data.user);}
+  // mode: "email" → "password" (existing) | "email" → "otp" (new)
+  const [mode,setMode]=useState("email");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [otp,setOtp]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [showPass,setShowPass]=useState(false);
+
+  // Step 1: check if user exists
+  async function checkEmail(){
+    const clean=sanitize(email).toLowerCase();
+    if(!validateEmail(clean)){setError("يرجى إدخال بريد إلكتروني صحيح ✉️");return;}
+    setLoading(true);setError("");
+    // Try to sign in with a dummy password to check if user exists
+    const{error:err}=await supabase.auth.signInWithPassword({email:clean,password:"__check__"});
+    setLoading(false);
+    if(!err||err.message.includes("Invalid login credentials")){
+      // User exists → show password screen
+      setMode("password");
+    } else if(err.message.includes("Email not confirmed")){
+      // User exists but not confirmed → send OTP
+      await sendOTP(clean);
+    } else {
+      // New user → send OTP to register
+      await sendOTP(clean);
+    }
+  }
+
+  async function sendOTP(emailAddr){
+    const clean=(emailAddr||sanitize(email)).toLowerCase();
+    setLoading(true);setError("");
+    const{error:err}=await supabase.auth.signInWithOtp({email:clean,options:{shouldCreateUser:true}});
+    setLoading(false);
+    if(err){setError("تعذر إرسال الرمز. حاول مجدداً.");return;}
+    setMode("otp");
+    gaEvent("send_otp");
+  }
+
+  async function loginWithPassword(){
+    const clean=sanitize(email).toLowerCase();
+    if(!password){setError("أدخل كلمة المرور");return;}
+    setLoading(true);setError("");
+    const{data,error:err}=await supabase.auth.signInWithPassword({email:clean,password});
+    setLoading(false);
+    if(err){setError("كلمة المرور غير صحيحة ❌");return;}
+    gaEvent("login_success");
+    onAuth(data.user);
+  }
+
+  async function verifyOTP(){
+    if(otp.length<6){setError("الرمز 6 أرقام على الأقل");return;}
+    setLoading(true);setError("");
+    const{data,error:err}=await supabase.auth.verifyOtp({email:sanitize(email).toLowerCase(),token:otp,type:"email"});
+    setLoading(false);
+    if(err){setError("رمز غير صحيح أو منتهي ❌");return;}
+    gaEvent("login_success");
+    onAuth(data.user);
+  }
+
+  const InputStyle={background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",width:"100%",boxSizing:"border-box",transition:"all .2s"};
+
   return(
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,fontFamily:FONT}}>
       <style>{CSS}</style>
@@ -150,22 +209,100 @@ function AuthScreen({onAuth}){
             {["📖 عربي","🔤 English","🔢 رياضيات"].map(s=><span key={s} style={{background:C.card,color:C.text,borderRadius:99,padding:"4px 12px",fontSize:12,fontWeight:700,border:`1px solid ${C.border}`}}>{s}</span>)}
           </div>
         </div>
+
         <Card style={{padding:24}}>
           <div style={{display:"flex",flexDirection:"column",gap:16,direction:"rtl"}}>
-            {mode==="login"?(<>
-              <div><h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>أهلاً بك! 👋</h2><p style={{color:C.muted,fontSize:13}}>أدخل بريدك الإلكتروني للبدء</p></div>
-              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="example@gmail.com" style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",direction:"ltr",width:"100%",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+
+            {/* ── STEP 1: Enter Email ── */}
+            {mode==="email"&&(<>
+              <div>
+                <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>أهلاً بك! 👋</h2>
+                <p style={{color:C.muted,fontSize:13}}>أدخل بريدك الإلكتروني للبدء</p>
+              </div>
+              <input
+                type="email" value={email}
+                onChange={e=>setEmail(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&checkEmail()}
+                placeholder="example@gmail.com"
+                style={{...InputStyle,direction:"ltr"}}
+                onFocus={e=>e.target.style.borderColor=C.orange}
+                onBlur={e=>e.target.style.borderColor=C.border}
+              />
               {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
-              <BtnPrimary onClick={sendOTP} disabled={loading||!email} full>{loading?"⏳ جاري الإرسال...":"📨 إرسال رمز التحقق"}</BtnPrimary>
-              <div style={{display:"flex",alignItems:"center",gap:8,background:"#F0FFF8",borderRadius:12,padding:"10px 14px"}}><span>🔒</span><span style={{color:C.green,fontSize:12,fontWeight:700}}>تسجيل دخول آمن بدون كلمة مرور</span></div>
-            </>):(<>
-              <div><h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>تحقق من بريدك ✉️</h2><p style={{color:C.muted,fontSize:13}}>أرسلنا رمزاً من 6 أرقام إلى {msg}</p></div>
-              <div style={{display:"flex",justifyContent:"center",gap:8,direction:"ltr"}}>{[...Array(6)].map((_,i)=><div key={i} style={{width:44,height:52,borderRadius:12,border:`2px solid ${otp[i]?C.orange:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:C.text,background:otp[i]?C.orangeLt:C.bg2}}>{otp[i]||""}</div>)}</div>
-              <input type="text" value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="أدخل الرمز" maxLength={6} style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:20,fontFamily:FONT,outline:"none",textAlign:"center",letterSpacing:8,direction:"ltr"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
-              <BtnPrimary onClick={verifyOTP} disabled={loading||otp.length<6} full>{loading?"⏳ جاري التحقق...":"✅ تأكيد الدخول"}</BtnPrimary>
-              <button onClick={()=>{setMode("login");setError("");setOtp("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600,textAlign:"center"}}>← تغيير البريد</button>
+              <BtnPrimary onClick={checkEmail} disabled={loading||!email} full>
+                {loading?"⏳ جاري التحقق...":"التالي →"}
+              </BtnPrimary>
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#F0FFF8",borderRadius:12,padding:"10px 14px"}}>
+                <span>🔒</span>
+                <span style={{color:C.green,fontSize:12,fontWeight:700}}>مستخدم جديد؟ سنرسل لك رمز تفعيل</span>
+              </div>
             </>)}
+
+            {/* ── STEP 2A: Existing user → Password ── */}
+            {mode==="password"&&(<>
+              <div>
+                <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>مرحباً بعودتك! 👋</h2>
+                <p style={{color:C.muted,fontSize:13}}>أدخل كلمة المرور لـ {email}</p>
+              </div>
+              <div style={{position:"relative"}}>
+                <input
+                  type={showPass?"text":"password"}
+                  value={password}
+                  onChange={e=>setPassword(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&loginWithPassword()}
+                  placeholder="كلمة المرور"
+                  style={{...InputStyle,direction:"ltr",paddingLeft:44}}
+                  onFocus={e=>e.target.style.borderColor=C.orange}
+                  onBlur={e=>e.target.style.borderColor=C.border}
+                />
+                <button
+                  onClick={()=>setShowPass(s=>!s)}
+                  style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:18,color:C.muted}}
+                >{showPass?"🙈":"👁️"}</button>
+              </div>
+              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
+              <BtnPrimary onClick={loginWithPassword} disabled={loading||!password} full>
+                {loading?"⏳ جاري الدخول...":"🔓 دخول"}
+              </BtnPrimary>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <button onClick={()=>{setMode("email");setError("");setPassword("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600}}>← تغيير البريد</button>
+                <button onClick={()=>sendOTP(email)} style={{background:"none",border:"none",color:C.orange,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:700}}>نسيت كلمة المرور؟</button>
+              </div>
+            </>)}
+
+            {/* ── STEP 2B: New user → OTP ── */}
+            {mode==="otp"&&(<>
+              <div>
+                <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>تحقق من بريدك ✉️</h2>
+                <p style={{color:C.muted,fontSize:13}}>أرسلنا رمزاً إلى {email}</p>
+              </div>
+              <div style={{display:"flex",justifyContent:"center",gap:8,direction:"ltr"}}>
+                {[...Array(6)].map((_,i)=>(
+                  <div key={i} style={{width:44,height:52,borderRadius:12,border:`2px solid ${otp[i]?C.orange:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:C.text,background:otp[i]?C.orangeLt:C.bg2,transition:"all .2s"}}>
+                    {otp[i]||""}
+                  </div>
+                ))}
+              </div>
+              <input
+                type="text" value={otp}
+                onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
+                onKeyDown={e=>e.key==="Enter"&&verifyOTP()}
+                placeholder="أدخل الرمز"
+                maxLength={6}
+                style={{...InputStyle,textAlign:"center",letterSpacing:8,direction:"ltr",fontSize:20}}
+                onFocus={e=>e.target.style.borderColor=C.orange}
+                onBlur={e=>e.target.style.borderColor=C.border}
+              />
+              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
+              <BtnPrimary onClick={verifyOTP} disabled={loading||otp.length<6} full>
+                {loading?"⏳ جاري التحقق...":"✅ تأكيد الدخول"}
+              </BtnPrimary>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <button onClick={()=>{setMode("email");setError("");setOtp("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600}}>← تغيير البريد</button>
+                <button onClick={()=>sendOTP(email)} style={{background:"none",border:"none",color:C.orange,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:700}}>إعادة الإرسال 🔄</button>
+              </div>
+            </>)}
+
           </div>
         </Card>
       </div>
