@@ -70,6 +70,14 @@ const ENGLISH_LETTERS = [
   { id:"f",letter:"F",name:"Letter F",color:"#D97706",  sound:"Fuh",  words:[{word:"Fish",emoji:"🐟",meaning:"سمكة"},{word:"Flower",emoji:"🌸",meaning:"زهرة"},{word:"Frog",emoji:"🐸",meaning:"ضفدع"}],examples:["Fish","Fox","Frog"]},
 ];
 
+const MATH_LESSONS = [
+  { id:"num1", letter:"١", name:"الأعداد ١-٥", color:C.green, sound:"واحد اثنان ثلاثة", words:[{word:"١ واحد",emoji:"1️⃣",meaning:"One"},{word:"٢ اثنان",emoji:"2️⃣",meaning:"Two"},{word:"٣ ثلاثة",emoji:"3️⃣",meaning:"Three"}], examples:["١","٢","٣","٤","٥"]},
+  { id:"num2", letter:"٦", name:"الأعداد ٦-١٠", color:"#2563EB", sound:"ستة سبعة ثمانية", words:[{word:"٦ ستة",emoji:"6️⃣",meaning:"Six"},{word:"٧ سبعة",emoji:"7️⃣",meaning:"Seven"},{word:"٨ ثمانية",emoji:"8️⃣",meaning:"Eight"}], examples:["٦","٧","٨","٩","١٠"]},
+  { id:"add",  letter:"+", name:"الجمع البسيط", color:"#D97706", sound:"جمع", words:[{word:"١+١=٢",emoji:"➕",meaning:"Addition"},{word:"٢+٢=٤",emoji:"➕",meaning:"Addition"},{word:"٣+١=٤",emoji:"➕",meaning:"Addition"}], examples:["١+١","٢+٣","٤+٤"]},
+  { id:"sub",  letter:"-", name:"الطرح البسيط", color:"#DC2626", sound:"طرح", words:[{word:"٥-١=٤",emoji:"➖",meaning:"Subtraction"},{word:"٤-٢=٢",emoji:"➖",meaning:"Subtraction"},{word:"٣-١=٢",emoji:"➖",meaning:"Subtraction"}], examples:["٥-١","٤-٢","٣-٣"]},
+];
+
+
 // ─── Utils ────────────────────────────────────────────────────────
 function sanitize(s){if(typeof s!=="string")return"";return s.replace(/[<>&"'`]/g,"").trim().slice(0,100);}
 function validateEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
@@ -89,8 +97,33 @@ function speak(text,lang="ar"){
   try{window.speechSynthesis?.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=lang==="ar"?"ar-SA":"en-US";u.rate=.82;u.pitch=1.15;u.volume=1;const voices=window.speechSynthesis?.getVoices()||[];const v=voices.find(v=>v.lang.startsWith(lang==="ar"?"ar":"en"))||null;if(v)u.voice=v;window.speechSynthesis?.speak(u);}catch{}
 }
 
-const QTYPES={arabic:["الحروف الهجائية","الكلمات البسيطة","الألوان","الحيوانات","الفواكه"],english:["alphabet letters","simple words","colors","animals","fruits"],math:["جمع ١-١٠","طرح ١-١٠","عد الأشياء","مقارنة الأعداد"]};
-function buildPrompt(sid,age,lid){if(!QTYPES[sid])return null;const topic=QTYPES[sid][Math.floor(Math.random()*QTYPES[sid].length)];const ageLabel=age==="young"?"٣ إلى ٦ سنوات":"٦ إلى ١٠ سنوات";const diff={easy:"بسيطة جداً",medium:"متوسطة",hard:"صعبة"}[lid]||"بسيطة";const base={arabic:`أنت مساعد تعليمي للأطفال السودانيين. اصنع 5 أسئلة باللغة العربية لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}.`,english:`Educational assistant. Create 5 English questions for a child aged ${ageLabel}. Topic: ${topic}. Difficulty: ${diff}.`,math:`مساعد تعليمي. اصنع 5 أسئلة رياضيات لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}.`};return `${base[sid]}\n\nJSON فقط:\n[{"q":"سؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"🎯"}]\n- ans = رقم الإجابة (0-3)\n- محتوى آمن 100%`;}
+function buildPrompt(sid,age,lid,lessonData){
+  const ageLabel=age==="young"?"٣ إلى ٦ سنوات":"٦ إلى ١٠ سنوات";
+  const diff={easy:"بسيطة جداً",medium:"متوسطة",hard:"صعبة"}[lid]||"بسيطة";
+  let topic="";
+  // Use lesson-specific content if available
+  if(lessonData){
+    if(sid==="arabic"||sid==="english"){
+      const words=lessonData.words?.map(w=>w.word).join("، ")||"";
+      topic=sid==="arabic"
+        ?`حرف ${lessonData.name} (${lessonData.letter}) والكلمات: ${words}`
+        :`Letter ${lessonData.name} and words: ${words}`;
+    } else {
+      topic="الأرقام والعمليات الحسابية البسيطة";
+    }
+  } else {
+    const defaults={arabic:"الحروف الهجائية والكلمات البسيطة",english:"alphabet letters and simple words",math:"جمع وطرح الأرقام ١-١٠"};
+    topic=defaults[sid]||"";
+  }
+  if(!topic)return null;
+  const base={
+    arabic:`أنت مساعد تعليمي للأطفال السودانيين. اصنع 5 أسئلة باللغة العربية لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}. الأسئلة يجب أن تكون عن نفس الموضوع فقط.`,
+    english:`Educational assistant for Sudanese children. Create 5 English questions for a child aged ${ageLabel}. Topic: ${topic}. Difficulty: ${diff}. Questions must be ONLY about this topic.`,
+    math:`مساعد تعليمي. اصنع 5 أسئلة رياضيات لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}.`
+  };
+  if(!base[sid])return null;
+  return `${base[sid]}\n\nJSON فقط بدون أي نص آخر:\n[{"q":"سؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"🎯"}]\n- ans = رقم الإجابة الصحيحة (0-3)\n- img = emoji مناسب\n- محتوى آمن 100% للأطفال`;
+}
 
 // ─── Shared UI Atoms ──────────────────────────────────────────────
 function ProgBar({pct,color,h=8}){return <div style={{background:"#E5D8D0",borderRadius:99,height:h,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,Math.max(0,pct))}%`,background:`linear-gradient(90deg,${color},${color}CC)`,borderRadius:99,transition:"width .8s cubic-bezier(.4,0,.2,1)",boxShadow:`0 2px 6px ${color}66`}}/></div>;}
@@ -300,7 +333,7 @@ function AddChildScreen({userId,onSave,onBack}){
 }
 
 // ─── HOME SCREEN ──────────────────────────────────────────────────
-function HomeScreen({profile,children,onAddChild,onSelectChild,onTabChange}){
+function HomeScreen({profile,children,onAddChild,onSelectChild,onSelectSubject,onTabChange}){
   return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:90}}>
     <style>{CSS}</style>
     {/* Nav */}
@@ -323,7 +356,7 @@ function HomeScreen({profile,children,onAddChild,onSelectChild,onTabChange}){
       {/* Subject cards */}
       <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:14}}>
         {SUBJECTS.map((s,idx)=><div key={s.id} style={{animation:`fadeUp .4s ${.12+idx*.08}s ease both`}}>
-          <Card onClick={()=>onTabChange("subjects",s)} style={{borderRight:`6px solid ${s.color}`,overflow:"visible"}}>
+          <Card onClick={()=>onSelectSubject(s)} style={{borderRight:`6px solid ${s.color}`,overflow:"visible"}}>
             <div style={{display:"flex",alignItems:"stretch"}}>
               <div style={{width:92,minHeight:110,background:`linear-gradient(135deg,${s.bg},${s.bg}CC)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <span style={{fontSize:52,animation:`float ${2.8+idx*.3}s ease-in-out infinite`,animationDelay:`${idx*.2}s`,display:"inline-block"}}>{s.emoji}</span>
@@ -357,10 +390,10 @@ function HomeScreen({profile,children,onAddChild,onSelectChild,onTabChange}){
 }
 
 // ─── JOURNEY (Subject Menu) ───────────────────────────────────────
-function JourneyScreen({child,onPickLesson,onPickQuiz,onBack,onTabChange}){
-  const subject=SUBJECTS[0]; // Arabic as default journey
-  const letters=ARABIC_LETTERS;
-  const completedCount=1; // أ completed
+function JourneyScreen({child,subject,onPickLesson,onPickQuiz,onBack,onTabChange}){
+  const subj=subject||SUBJECTS[0];
+  const letters=subj.id==="english"?ENGLISH_LETTERS:subj.id==="arabic"?ARABIC_LETTERS:MATH_LESSONS;
+  const completedCount=subj.id==="math"?0:1;
   return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:90}}>
     <style>{CSS}</style>
     {/* Nav */}
@@ -371,7 +404,7 @@ function JourneyScreen({child,onPickLesson,onPickQuiz,onBack,onTabChange}){
     </div>
     {/* Progress strip */}
     <div style={{padding:"12px 18px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:800,color:C.orange}}>اللغة العربية</span><span style={{fontSize:12,fontWeight:700,color:C.muted}}>{completedCount} من {letters.length}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:800,color:subj.color}}>{subj.label}</span><span style={{fontSize:12,fontWeight:700,color:C.muted}}>{completedCount} من {letters.length}</span></div>
       <ProgBar pct={(completedCount/letters.length)*100} color={C.orange}/>
     </div>
     <div style={{padding:"8px 18px",display:"flex",flexDirection:"column",gap:12}}>
@@ -412,6 +445,56 @@ function JourneyScreen({child,onPickLesson,onPickQuiz,onBack,onTabChange}){
   </div>);
 }
 
+// ─── Write Box Component ─────────────────────────────────────────
+function WriteBox({lesson,lang}){
+  const [input,setInput]=useState("");
+  const [status,setStatus]=useState(null); // null | "correct" | "wrong"
+  const target=lesson?.words?.[0]?.word?.replace(/[\u064B-\u065F]/g,"") || lesson?.letter || "";
+
+  function check(){
+    if(!input.trim())return;
+    const correct=input.trim()===target||input.trim()===lesson?.letter;
+    setStatus(correct?"correct":"wrong");
+    playSound(correct?"correct":"wrong");
+    if(correct){speak("ممتاز! إجابة صحيحة!","ar");}
+    else{speak("حاول مرة أخرى!","ar");}
+    setTimeout(()=>{if(!correct){setInput("");setStatus(null);}},1500);
+  }
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <label style={{fontSize:13,fontWeight:700,color:C.muted,direction:"rtl"}}>
+        ✏️ اكتب حرف <span style={{color:lesson?.color||C.orange,fontWeight:900,fontSize:16}}>{lesson?.letter}</span> أو الكلمة:
+      </label>
+      <div style={{display:"flex",gap:8}}>
+        <input
+          value={input}
+          onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&check()}
+          placeholder={`اكتب هنا...`}
+          style={{
+            flex:1,background:status==="correct"?C.greenLt:status==="wrong"?"#FFF0F0":C.bg2,
+            border:`2px solid ${status==="correct"?C.green:status==="wrong"?C.red:C.border}`,
+            borderRadius:14,padding:"12px 16px",color:C.text,fontSize:22,
+            fontFamily:"Cairo,sans-serif",outline:"none",direction:"rtl",
+            transition:"all .25s",textAlign:"center",
+          }}
+          onFocus={e=>{if(!status)e.target.style.borderColor=C.orange;}}
+          onBlur={e=>{if(!status)e.target.style.borderColor=C.border;}}
+        />
+        <button onClick={check} style={{
+          background:`linear-gradient(135deg,${C.orange},#F28C00)`,
+          color:"white",border:"none",borderRadius:14,padding:"12px 18px",
+          fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:FONT,
+          boxShadow:`0 4px 12px ${C.orange}44`,flexShrink:0,
+        }}>✓</button>
+      </div>
+      {status==="correct"&&<div style={{background:C.greenLt,border:`1.5px solid ${C.green}44`,borderRadius:12,padding:"8px 14px",color:C.green,fontWeight:800,fontSize:14,textAlign:"center"}}>✅ ممتاز! كتبتها صح!</div>}
+      {status==="wrong"&&<div style={{background:"#FFF0F0",border:`1.5px solid ${C.red}44`,borderRadius:12,padding:"8px 14px",color:C.red,fontWeight:800,fontSize:14,textAlign:"center"}}>❌ حاول مرة أخرى! الكلمة: {target}</div>}
+    </div>
+  );
+}
+
 // ─── LESSON SCREEN ────────────────────────────────────────────────
 function LessonScreen({lesson,subject,onComplete,onBack}){
   const [step,setStep]=useState(0);
@@ -450,7 +533,7 @@ function LessonScreen({lesson,subject,onComplete,onBack}){
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <BtnGreen onClick={()=>{speak(lesson.words[0]?.word,lang);}} style={{width:"100%",justifyContent:"center",fontSize:17,padding:14}}>🔊 اسمع</BtnGreen>
-              <BtnOutline onClick={()=>{}} style={{width:"100%",justifyContent:"center",fontSize:15,padding:12}}>✏️ اكتب</BtnOutline>
+              <WriteBox lesson={lesson} lang={lang}/>
             </div>
           </div>
         </Card>
@@ -657,9 +740,9 @@ export default function App(){
     }catch(e){ setScreen("setup"); }
   }
 
-  const fetchQuestions=useCallback(async(subject,level)=>{
+  const fetchQuestions=useCallback(async(subject,level,lessonData)=>{
     setActiveSubject(subject);setActiveLevel(level);setScreen("loading");setError(null);
-    const prompt=buildPrompt(subject.id,activeChild?.age||"old",level.id);if(!prompt){setError("خطأ");setScreen("error");return;}
+    const prompt=buildPrompt(subject.id,activeChild?.age||"old",level.id,lessonData||activeLesson);if(!prompt){setError("خطأ");setScreen("error");return;}
     try{const res=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});if(!res.ok)throw new Error();const data=await res.json();if(!data?.content?.[0]?.text)throw new Error();const jsonStr=data.content[0].text.replace(/```json|```/gi,"").trim();const parsed=JSON.parse(jsonStr);if(!validateQuestions(parsed))throw new Error();setQuestions(parsed);setScreen("quiz");}
     catch{setError("مشكلة في توليد الأسئلة.");setScreen("error");}
   },[activeChild]);
@@ -696,9 +779,9 @@ export default function App(){
     <Toast msg={toast}/>
     {screen==="auth"        && <AuthScreen onAuth={async u=>{setUser(u);await loadProfile(u);}}/>}
     {screen==="setup"       && user&&<SetupProfile user={user} onSave={p=>{setProfile(p);setScreen("home");}}/>}
-    {screen==="home"        && <HomeScreen profile={profile} children={children} onAddChild={()=>setScreen("addChild")} onSelectChild={c=>{setActiveChild(c);setScreen("home");}} onTabChange={handleTabChange}/>}
+    {screen==="home"        && <HomeScreen profile={profile} children={children} onAddChild={()=>setScreen("addChild")} onSelectChild={c=>{setActiveChild(c);setScreen("home");}} onSelectSubject={s=>{setActiveSubject(s);if(activeChild)setScreen("journey");else showToast("اختر طفلاً أولاً 👶");}} onTabChange={handleTabChange}/>}
     {screen==="addChild"    && user&&<AddChildScreen userId={user.id} onSave={c=>{setChildren(p=>[...p,c]);setScreen("home");}} onBack={()=>setScreen("home")}/>}
-    {screen==="journey"     && activeChild&&<JourneyScreen child={activeChild} onPickLesson={l=>{setActiveLesson(l);setActiveSubject(SUBJECTS[0]);setScreen("lesson");}} onPickQuiz={()=>setScreen("levels")} onBack={()=>setScreen("home")} onTabChange={handleTabChange}/>}
+    {screen==="journey"     && activeChild&&<JourneyScreen child={activeChild} subject={activeSubject} onPickLesson={l=>{setActiveLesson(l);setScreen("lesson");}} onPickQuiz={()=>setScreen("levels")} onBack={()=>setScreen("home")} onTabChange={handleTabChange}/>}
     {screen==="lesson"      && activeLesson&&<LessonScreen lesson={activeLesson} subject={activeSubject} onComplete={()=>setScreen("levels")} onBack={()=>setScreen("journey")}/>}
     {screen==="levels"      && activeSubject&&<LevelSelector subject={activeSubject} onSelect={lv=>fetchQuestions(activeSubject,lv)} onBack={()=>setScreen("journey")}/>}
     {screen==="loading"     && <LoadingScreen subject={activeSubject}/>}
