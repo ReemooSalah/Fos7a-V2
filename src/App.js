@@ -167,57 +167,60 @@ function TabBar({active,onTab}){
 
 // ─── Auth Screen ──────────────────────────────────────────────────
 function AuthScreen({onAuth}){
-  const [mode,setMode]=useState("email");
-  const [email,setEmail]=useState("");
-  const [otp,setOtp]=useState("");
+  const [mode,setMode]=useState("signup"); // "signup" | "login"
+  const [name,setName]=useState("");
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
-  const [countdown,setCountdown]=useState(0);
 
-  // Countdown timer for resend
-  useEffect(()=>{
-    if(countdown<=0)return;
-    const t=setTimeout(()=>setCountdown(c=>c-1),1000);
-    return()=>clearTimeout(t);
-  },[countdown]);
+  const fakeEmail = `${username.toLowerCase().replace(/[^a-z0-9_]/g,"")}@fos7a.local`;
 
-  async function sendOTP(){
-    const clean=sanitize(email).toLowerCase();
-    if(!validateEmail(clean)){setError("يرجى إدخال بريد إلكتروني صحيح ✉️");return;}
+  async function handleAuth(){
+    if(!username || !password){setError("يرجى إدخال اسم المستخدم وكلمة المرور");return;}
+    if(mode==="signup" && !name){setError("يرجى إدخال اسمك");return;}
+    
     setLoading(true);setError("");
-    const{error:err}=await supabase.auth.signInWithOtp({
-      email:clean,
-      options:{shouldCreateUser:true}
-    });
-    setLoading(false);
-    if(err){
-      if(err.message.includes("rate limit")||err.message.includes("429")){
-        setError("كثير محاولات! انتظري دقيقة ثم حاولي مجدداً ⏳");
-      } else {
-        setError("تعذر إرسال الرمز. تحققي من الإنترنت وحاولي مجدداً.");
+    
+    if(mode==="signup"){
+      const {data,error:err}=await supabase.auth.signUp({
+        email: fakeEmail,
+        password: password
+      });
+      if(err){
+        if(err.message.includes("already registered")||err.message.includes("User already registered")){
+          setError("اسم المستخدم مسجل مسبقاً ❌");
+        } else {
+          setError("حدث خطأ أثناء التسجيل: "+err.message);
+        }
+        setLoading(false);
+        return;
       }
-      return;
+      if(data.user){
+        await supabase.from("profiles").upsert({
+          id: data.user.id,
+          email: fakeEmail,
+          parent_name: name,
+          created_at: new Date().toISOString()
+        });
+        gaEvent("signup_success");
+        onAuth(data.user);
+      }
+    } else {
+      const {data,error:err}=await supabase.auth.signInWithPassword({
+        email: fakeEmail,
+        password: password
+      });
+      if(err){
+        setError("اسم المستخدم أو كلمة المرور غير صحيحة ❌");
+        setLoading(false);
+        return;
+      }
+      if(data.user){
+        gaEvent("login_success");
+        onAuth(data.user);
+      }
     }
-    setMode("otp");
-    setCountdown(60);
-    gaEvent("send_otp");
-  }
-
-  async function verifyOTP(){
-    if(otp.length<6){setError("الرمز 6 أرقام على الأقل");return;}
-    setLoading(true);setError("");
-    const{data,error:err}=await supabase.auth.verifyOtp({
-      email:sanitize(email).toLowerCase(),
-      token:otp,
-      type:"email"
-    });
-    setLoading(false);
-    if(err){
-      setError("رمز غير صحيح أو منتهي الصلاحية ❌");
-      return;
-    }
-    gaEvent("login_success");
-    onAuth(data.user);
   }
 
   const InputStyle={background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",width:"100%",boxSizing:"border-box",transition:"all .2s"};
@@ -226,7 +229,6 @@ function AuthScreen({onAuth}){
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,fontFamily:FONT}}>
       <style>{CSS}</style>
       <div style={{width:"100%",maxWidth:400,animation:"fadeUp .5s ease both"}}>
-        {/* Logo */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:64,marginBottom:4,animation:"float 3s ease-in-out infinite",display:"inline-block"}}>🇸🇩</div>
           <h1 style={{fontSize:44,fontWeight:900,color:C.orange,margin:"0 0 4px"}}>فُسحة</h1>
@@ -238,79 +240,52 @@ function AuthScreen({onAuth}){
 
         <Card style={{padding:24}}>
           <div style={{display:"flex",flexDirection:"column",gap:16,direction:"rtl"}}>
-
-            {/* ── STEP 1: Email ── */}
-            {mode==="email"&&(<>
-              <div>
-                <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>أهلاً بك! 👋</h2>
-                <p style={{color:C.muted,fontSize:13}}>أدخل بريدك الإلكتروني — سنرسل لك رمز دخول</p>
-              </div>
+            <div>
+              <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>{mode==="signup"?"حساب جديد ✨":"مرحباً بعودتك 👋"}</h2>
+              <p style={{color:C.muted,fontSize:13}}>{mode==="signup"?"أدخل بياناتك للبدء":"أدخل اسم المستخدم وكلمة المرور"}</p>
+            </div>
+            
+            {mode==="signup" && (
               <input
-                type="email" value={email}
-                onChange={e=>setEmail(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&sendOTP()}
-                placeholder="example@gmail.com"
-                style={{...InputStyle,direction:"ltr"}}
+                type="text" value={name}
+                onChange={e=>setName(e.target.value)}
+                placeholder="الاسم (مثال: أم أحمد)"
+                style={InputStyle}
                 onFocus={e=>e.target.style.borderColor=C.orange}
                 onBlur={e=>e.target.style.borderColor=C.border}
               />
-              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
-              <BtnPrimary onClick={sendOTP} disabled={loading||!email} full>
-                {loading?"⏳ جاري الإرسال...":"📨 إرسال رمز الدخول"}
-              </BtnPrimary>
-              <div style={{display:"flex",alignItems:"center",gap:8,background:"#F0FFF8",borderRadius:12,padding:"10px 14px"}}>
-                <span>🔒</span>
-                <span style={{color:C.green,fontSize:12,fontWeight:700}}>تسجيل دخول آمن بدون كلمة مرور</span>
-              </div>
-            </>)}
-
-            {/* ── STEP 2: OTP ── */}
-            {mode==="otp"&&(<>
-              <div>
-                <h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>تحقق من بريدك ✉️</h2>
-                <p style={{color:C.muted,fontSize:13}}>أرسلنا رمزاً مكوناً من 6 أرقام إلى:</p>
-                <p style={{color:C.orange,fontSize:13,fontWeight:800,marginTop:4,direction:"ltr",textAlign:"right"}}>{email}</p>
-              </div>
-              {/* OTP boxes */}
-              <div style={{display:"flex",justifyContent:"center",gap:8,direction:"ltr"}}>
-                {[...Array(6)].map((_,i)=>(
-                  <div key={i} style={{width:44,height:52,borderRadius:12,border:`2px solid ${otp[i]?C.orange:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:C.text,background:otp[i]?C.orangeLt:C.bg2,transition:"all .2s"}}>
-                    {otp[i]||""}
-                  </div>
-                ))}
-              </div>
-              <input
-                type="number" value={otp}
-                onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
-                onKeyDown={e=>e.key==="Enter"&&verifyOTP()}
-                placeholder="أدخل الرمز هنا"
-                maxLength={6}
-                style={{...InputStyle,textAlign:"center",letterSpacing:6,direction:"ltr",fontSize:22,fontWeight:700}}
-                onFocus={e=>e.target.style.borderColor=C.orange}
-                onBlur={e=>e.target.style.borderColor=C.border}
-              />
-              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
-              <BtnPrimary onClick={verifyOTP} disabled={loading||otp.length<6} full>
-                {loading?"⏳ جاري التحقق...":"✅ تأكيد الدخول"}
-              </BtnPrimary>
-              {/* Resend + back */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <button onClick={()=>{setMode("email");setError("");setOtp("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600}}>← تغيير البريد</button>
-                <button
-                  onClick={()=>{if(countdown>0)return;setOtp("");setError("");sendOTP();}}
-                  disabled={countdown>0}
-                  style={{background:"none",border:"none",color:countdown>0?C.muted:C.orange,cursor:countdown>0?"default":"pointer",fontSize:13,fontFamily:FONT,fontWeight:700}}
-                >
-                  {countdown>0?`إعادة الإرسال (${countdown}s)`:"إعادة الإرسال 🔄"}
-                </button>
-              </div>
-              {/* Hint */}
-              <div style={{background:C.bg2,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:8}}>
-                <span style={{fontSize:16,flexShrink:0}}>💡</span>
-                <p style={{color:C.muted,fontSize:12,lineHeight:1.5,margin:0}}>تحققي من مجلد Spam لو ما وصل الرمز. الرمز صالح لمدة ساعة.</p>
-              </div>
-            </>)}
-
+            )}
+            
+            <input
+              type="text" value={username}
+              onChange={e=>setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g,""))}
+              placeholder="اسم المستخدم (إنجليزي فقط)"
+              style={{...InputStyle,direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor=C.orange}
+              onBlur={e=>e.target.style.borderColor=C.border}
+            />
+            
+            <input
+              type="password" value={password}
+              onChange={e=>setPassword(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleAuth()}
+              placeholder="كلمة المرور"
+              style={{...InputStyle,direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor=C.orange}
+              onBlur={e=>e.target.style.borderColor=C.border}
+            />
+            
+            {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
+            
+            <BtnPrimary onClick={handleAuth} disabled={loading} full>
+              {loading?"⏳ جاري التحميل...":mode==="signup"?"🚀 إنشاء حساب":"تسجيل الدخول"}
+            </BtnPrimary>
+            
+            <div style={{textAlign:"center",marginTop:8}}>
+              <button onClick={()=>{setMode(mode==="signup"?"login":"signup");setError("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:700,textDecoration:"underline"}}>
+                {mode==="signup"?"لديك حساب بالفعل؟ سجل دخولك":"ليس لديك حساب؟ أنشئ حساباً جديداً"}
+              </button>
+            </div>
           </div>
         </Card>
       </div>
@@ -351,7 +326,7 @@ function HomeScreen({profile,children,onAddChild,onSelectChild,onSelectSubject,o
 
       {/* Children selector or empty */}
       {children.length===0?<div style={{marginTop:16,animation:"fadeUp .4s .1s ease both"}}><Card style={{padding:32,textAlign:"center",border:`2px dashed ${C.orange}33`}}><div style={{fontSize:52,marginBottom:12}}>👶</div><p style={{color:C.muted,fontSize:14,fontWeight:600}}>أضف طفلك الأول!</p><div style={{marginTop:16}}><BtnPrimary onClick={onAddChild}>+ إضافة طفل</BtnPrimary></div></Card></div>
-      :<div style={{marginTop:14,display:"flex",gap:8,flexWrap:"wrap",animation:"fadeUp .4s .08s ease both"}}>{children.map(child=><button key={child.id} onClick={()=>onSelectChild(child)} style={{background:C.card,border:`2px solid ${C.border}`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.text,display:"flex",alignItems:"center",gap:8,boxShadow:C.shadow,transition:"all .2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.orange;e.currentTarget.style.color=C.orange;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.text;}}><span style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.orange},#F28C00)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"white"}}>{child.name[0]}</span>{child.name}</button>)}<button onClick={onAddChild} style={{background:C.orangeLt,border:`2px dashed ${C.orange}44`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.orange}}>+ إضافة</button></div>}
+      :<div style={{marginTop:14,display:"flex",gap:8,flexWrap:"wrap",animation:"fadeUp .4s .08s ease both"}}>{children.map(child=><button key={child.id} onClick={()=>onSelectChild(child)} style={{background:C.card,border:`2px solid ${C.border}`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.text,display:"flex",alignItems:"center",gap:8,boxShadow:C.shadow,transition:"all .2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.orange;e.currentTarget.style.color=C.orange;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.text;}}><span style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.orange},#F28C00)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"white"}}>{child.name?.[0] || '👶'}</span>{child.name}</button>)}<button onClick={onAddChild} style={{background:C.orangeLt,border:`2px dashed ${C.orange}44`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.orange}}>+ إضافة</button></div>}
 
       {/* Subject cards */}
       <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:14}}>
