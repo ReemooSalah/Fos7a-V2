@@ -174,7 +174,7 @@ function AuthScreen({onAuth}){
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
 
-  const fakeEmail = `${username.toLowerCase().replace(/[^a-z0-9_]/g,"")}@fos7a.local`;
+  const fakeEmail = `${username.toLowerCase().replace(/[^a-z0-9_]/g,"")}@fos7a.com`;
 
   async function handleAuth(){
     if(!username || !password){setError("يرجى إدخال اسم المستخدم وكلمة المرور");return;}
